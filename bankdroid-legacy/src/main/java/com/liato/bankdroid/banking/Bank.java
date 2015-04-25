@@ -17,6 +17,8 @@
 package com.liato.bankdroid.banking;
 
 import com.liato.bankdroid.Helpers;
+import com.liato.bankdroid.api.configuration.Field;
+import com.liato.bankdroid.api.configuration.ProviderConfiguration;
 import com.liato.bankdroid.banking.exceptions.BankChoiceException;
 import com.liato.bankdroid.banking.exceptions.BankException;
 import com.liato.bankdroid.banking.exceptions.LoginException;
@@ -44,7 +46,9 @@ import java.util.Map;
 
 import eu.nullbyte.android.urllib.Urllib;
 
-public abstract class Bank implements Comparable<Bank>, IBankTypes {
+public abstract class Bank implements Comparable<Bank>, IBankTypes, ProviderConfiguration {
+
+    private final ProviderConfiguration defaultConfiguration = new BasicProviderConfiguration();
 
     protected String TAG = "Bank";
 
@@ -361,6 +365,10 @@ public abstract class Bank implements Comparable<Bank>, IBankTypes {
 
     public int compareTo(Bank another) {
         return this.getName().compareToIgnoreCase(another.getName());
+    }
+
+    public Map<String, Field> getConfiguration() {
+        return defaultConfiguration.getConfiguration();
     }
 
     public void updateComplete() {
