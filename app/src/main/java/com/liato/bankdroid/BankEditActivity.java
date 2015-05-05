@@ -17,15 +17,18 @@
 package com.liato.bankdroid;
 
 import com.crashlytics.android.Crashlytics;
+import com.liato.bankdroid.api.configuration.Field;
 import com.liato.bankdroid.appwidget.AutoRefreshService;
 import com.liato.bankdroid.banking.Account;
 import com.liato.bankdroid.banking.Bank;
 import com.liato.bankdroid.banking.BankChoice;
 import com.liato.bankdroid.banking.BankFactory;
+import com.liato.bankdroid.banking.LegacyProviderConfiguration;
 import com.liato.bankdroid.banking.exceptions.BankChoiceException;
 import com.liato.bankdroid.banking.exceptions.BankException;
 import com.liato.bankdroid.banking.exceptions.LoginException;
 import com.liato.bankdroid.db.DBAdapter;
+import com.liato.bankdroid.utils.FieldTypeMapper;
 import com.liato.bankdroid.utils.NetworkUtils;
 
 import android.app.AlertDialog;
@@ -34,11 +37,9 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
-import android.graphics.Typeface;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
-import android.text.InputType;
 import android.text.method.PasswordTransformationMethod;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -50,13 +51,17 @@ import android.widget.AdapterView.OnItemSelectedListener;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.TextView;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import butterknife.ButterKnife;
 import butterknife.InjectView;
@@ -68,26 +73,8 @@ public class BankEditActivity extends LockableActivity
     @InjectView(R.id.spnBankeditBanklist)
     Spinner mBankSpinner;
 
-    @InjectView(R.id.edtBankeditUsername)
-    EditText mUsernameField;
-
-    @InjectView(R.id.txtBankeditUsername)
-    TextView mUsernameLabel;
-
-    @InjectView(R.id.edtBankeditPassword)
-    EditText mPasswordField;
-
-    @InjectView(R.id.txtBankeditPassword)
-    TextView mPasswordLabel;
-
-    @InjectView(R.id.edtBankeditCustomName)
-    EditText mCustomNameField;
-
-    @InjectView(R.id.edtBankeditExtras)
-    EditText mExtrasField;
-
-    @InjectView(R.id.txtBankeditExtras)
-    TextView mExtrasLabel;
+    @InjectView(R.id.layoutBankConfiguration)
+    LinearLayout mFormContainer;
 
     @InjectView(R.id.txtErrorDesc)
     TextView mErrorDescription;
@@ -118,13 +105,8 @@ public class BankEditActivity extends LockableActivity
             if (BANKID != -1) {
                 Bank bank = BankFactory.bankFromDb(BANKID, this, false);
                 if (bank != null) {
-                    mUsernameField.setText(bank.getUsername());
-                    mPasswordField.setText(bank.getPassword());
-                    mCustomNameField.setText(bank.getCustomName());
-                    if (bank.getExtras() != null) {
-                        mExtrasField.setText(bank.getExtras());
-                    }
-
+                    createForm(new LegacyProviderConfiguration(bank).getConfiguration());
+                    populateForm(bank.getProperties());
                     mErrorDescription.setVisibility(bank.isDisabled() ? View.VISIBLE : View.INVISIBLE);
 
                     SELECTED_BANK = bank;
@@ -145,17 +127,7 @@ public class BankEditActivity extends LockableActivity
         if (v.getId() == R.id.btnSettingsCancel) {
             this.finish();
         } else if (v.getId() == R.id.btnSettingsOk) {
-            SELECTED_BANK.setUsername(
-                    mUsernameField.getText().toString()
-                            .trim());
-            SELECTED_BANK.setPassword(
-                    mPasswordField.getText().toString()
-                            .trim());
-            SELECTED_BANK.setCustomName(
-                    mCustomNameField.getText().toString()
-                            .trim());
-            SELECTED_BANK.setExtras(
-                    mExtrasField.getText().toString().trim());
+            SELECTED_BANK.setProperties(getFormParameters(SELECTED_BANK.getConfiguration().keySet()));
             SELECTED_BANK.setDbid(BANKID);
             new DataRetrieverTask(this, SELECTED_BANK).execute();
         }
@@ -165,47 +137,9 @@ public class BankEditActivity extends LockableActivity
     @Override
     public void onItemSelected(AdapterView<?> parentView, View selectedItemView, int pos, long id) {
         SELECTED_BANK = (Bank) parentView.getItemAtPosition(pos);
+        mFormContainer.removeAllViewsInLayout();
+        createForm(new LegacyProviderConfiguration(SELECTED_BANK).getConfiguration());
 
-        mUsernameField.setInputType(SELECTED_BANK.getInputTypeUsername());
-        mUsernameField.setHint(SELECTED_BANK.getInputHintUsername());
-        mUsernameLabel.setText(SELECTED_BANK.getInputTitleUsername());
-
-        mPasswordField.setInputType(SELECTED_BANK.getInputTypePassword());
-        mPasswordField.setTransformationMethod(PasswordTransformationMethod.getInstance());
-        mPasswordField.setTypeface(Typeface.MONOSPACE);
-        mPasswordLabel.setText(SELECTED_BANK.getInputTitlePassword());
-
-        mExtrasField.setInputType(SELECTED_BANK.getInputTypeExtras());
-        if ((SELECTED_BANK.getInputTypeExtras() & InputType.TYPE_TEXT_VARIATION_PASSWORD)
-                == InputType.TYPE_TEXT_VARIATION_PASSWORD) {
-            mExtrasField.setTransformationMethod(PasswordTransformationMethod.getInstance());
-            mExtrasField.setTypeface(Typeface.MONOSPACE);
-        }
-        mExtrasLabel.setText(SELECTED_BANK.getInputTitleExtras());
-
-        if (SELECTED_BANK.isInputUsernameHidden()) {
-            mUsernameField.setVisibility(View.GONE);
-            mUsernameLabel.setVisibility(View.GONE);
-        } else {
-            mUsernameField.setVisibility(View.VISIBLE);
-            mUsernameLabel.setVisibility(View.VISIBLE);
-        }
-
-        if (SELECTED_BANK.isInputPasswordHidden()) {
-            mPasswordField.setVisibility(View.GONE);
-            mPasswordLabel.setVisibility(View.GONE);
-        } else {
-            mPasswordField.setVisibility(View.VISIBLE);
-            mPasswordLabel.setVisibility(View.VISIBLE);
-        }
-
-        if (SELECTED_BANK.isInputExtrasHidden()) {
-            mExtrasField.setVisibility(View.GONE);
-            mExtrasLabel.setVisibility(View.GONE);
-        } else {
-            mExtrasField.setVisibility(View.VISIBLE);
-            mExtrasLabel.setVisibility(View.VISIBLE);
-        }
     }
 
     @Override
@@ -225,6 +159,48 @@ public class BankEditActivity extends LockableActivity
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
+    }
+
+    private void createForm(Map<String, Field> configuration) {
+        for(Field field : configuration.values()) {
+            TextView fieldText = new TextView(this);
+            fieldText.setText(field.getLabel());
+            fieldText.setVisibility(field.isHidden() ? View.GONE : View.VISIBLE);
+            // fieldText.setId(5);
+            // fieldText.setLayoutParams(new LayoutParams(LayoutParams.FILL_PARENT,LayoutParams.WRAP_CONTENT));
+            mFormContainer.addView(fieldText);
+
+            EditText inputField = new EditText(this);
+            inputField.setHint(field.getPlaceholder());
+            if(field.isEncrypted()) {
+                inputField.setTransformationMethod(PasswordTransformationMethod.getInstance());
+            } else {
+                inputField.setInputType(FieldTypeMapper.fromFieldType(field.getFieldType()));
+            }
+            inputField.setVisibility(field.isHidden() ? View.GONE : View.VISIBLE);
+            inputField.setTag(field.getReference());
+
+            mFormContainer.addView(inputField);
+        }
+    }
+
+    private void populateForm(Map<String, String> properties) {
+        View base = findViewById(R.id.layoutBankConfiguration);
+        for(Map.Entry<String, String> property : properties.entrySet()) {
+            EditText propertyInput = (EditText) base.findViewWithTag(property.getKey());
+            propertyInput.setText(property.getValue());
+        }
+    }
+
+    private Map<String, String> getFormParameters(Set<String> propertyNames) {
+        View base = findViewById(R.id.layoutBankConfiguration);
+        Map<String, String> properties = new HashMap<>();
+        for(String property : propertyNames) {
+            EditText propertyInput = (EditText) base.findViewWithTag(property);
+            properties.put(property,
+                    propertyInput.getText().toString().trim());
+        }
+        return properties;
     }
 
     private class BankSpinnerAdapter<T> extends ArrayAdapter<T> {
@@ -361,5 +337,4 @@ public class BankEditActivity extends LockableActivity
             }
         }
     }
-
 }
